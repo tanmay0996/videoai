@@ -36,6 +36,8 @@ userSchema.pre('save', async function(next){
 );
 
 const User=models?.User|| model<IUser>("User",userSchema)
+//search if there any existing model nmaed"User" present or not
+//if yes use it otherwise creaate a new one
 
 
 export default User
