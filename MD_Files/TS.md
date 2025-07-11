@@ -32,3 +32,7 @@ Reusability across functions or components that interact with video objects.
 | `IVideo`           | TypeScript interface        | Autocompletion and type safety                |
 | `videoSchema`      | Mongoose schema             | Database schema + validation                  |
 | `Video` model      | Connects schema to MongoDB  | Allows CRUD operations on `videos` collection |
+
+
+
+![alt text](image.png)
