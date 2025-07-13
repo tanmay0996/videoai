@@ -35,4 +35,3 @@ Reusability across functions or components that interact with video objects.
 
 
 
-![alt text](image.png)

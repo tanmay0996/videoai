@@ -13,6 +13,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    //Check db connection
     await connectToDatabase();
 
     const existingUser = await User.findOne({ email });
