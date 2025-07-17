@@ -27,12 +27,14 @@ function LoginPage() {
   return (
     <div>
       <h1>Login</h1>
+      <h2>email</h2>
       <form onSubmit={handleSubmit}>
         <input
           type="email"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
         />
+        <h2>pass</h2>
         <input
           type="password"
           value={password}
