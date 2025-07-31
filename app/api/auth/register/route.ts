@@ -4,51 +4,44 @@ import { connectToDatabase } from "@/lib/db";
 
 export async function POST(request: NextRequest) {
   try {
-    const { email, password } = await request.json();
+    const { name, email, password } = await request.json(); 
 
-    if (!email || !password) {
+    // ✅ Validate required fields
+    if (!name || !email || !password) {
       return NextResponse.json(
-        { error: "email and password are required" },
+        { error: "Name, email, and password are required" },
         { status: 400 }
       );
     }
 
-    //Check db connection
+    // ✅ Connect to DB
     await connectToDatabase();
 
+    // ✅ Check if user already exists
     const existingUser = await User.findOne({ email });
     if (existingUser) {
       return NextResponse.json(
-        {
-          error: "user already exist",
-        },
-        {
-          status: 500,
-        }
+        { error: "User already exists" },
+        { status: 400 } 
       );
     }
 
+    // ✅ Create new user 
+    await User.create({
+      name,       
+      email,
+      password,
+    });
 
-    await User.create(
-        {
-            email,
-            password
-        }
-    )
-
-   return NextResponse.json(
-    {message:"User is registered successfully"},
-    {status:200}
-   )
-
-  } catch (error) {
-
-    console.error("Registration error",error)
     return NextResponse.json(
-        {
-            error:"Registration failed"
-        },
-        {status:500}
-    )
+      { message: "User is registered successfully" },
+      { status: 200 }
+    );
+  } catch (error) {
+    console.error("Registration error", error);
+    return NextResponse.json(
+      { error: "Registration failed" },
+      { status: 500 }
+    );
   }
 }
