@@ -1,342 +1,432 @@
+// pages/upload-test.tsx
+
 'use client';
 
-import { useState } from 'react';
-import { motion } from 'framer-motion';
-import { useForm, SubmitHandler } from 'react-hook-form';
-import { zodResolver } from '@hookform/resolvers/zod';
-import { z } from 'zod';
-import { Upload, Settings, Check } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
-import { Checkbox } from '@/components/ui/checkbox';
-import { Slider } from '@/components/ui/slider';
-import { toast } from 'sonner';
-import FormCard from '../components/FormCard';
-import FileUpload from '../components/FileUpload';
-import AnimatedBackground from '../components/AnimatedBackground';
-import Navbar from '../components/Navbar';
-import { apiClient } from '@/lib/api-client';
-import { useRouter } from 'next/navigation';
-import { IVideo } from '@/models/Video';
+import { useState, ChangeEvent, FormEvent } from 'react';
 
+interface ImageKitAuthParams {
+  token: string;
+  signature: string;
+  expire: number;
+}
 
+interface ImageKitResponse {
+  url: string;
+  fileId: string;
+  name: string;
+}
 
-const videoUploadSchema = z.object({
-  title: z.string().min(3, 'Title must be at least 3 characters'),
-  description: z.string().min(10, 'Description must be at least 10 characters'),
-  videoUrl: z.string().min(1, 'Video is required'),
-  thumbnailUrl: z.string().min(1, 'Thumbnail is required'),
-  controls: z.boolean(),
-  quality: z.number().min(1).max(100),
-});
-
-type VideoUploadFormData = z.infer<typeof videoUploadSchema>;
-
-export default function VideoUpload() {
-  const router = useRouter();
-  const [isLoading, setIsLoading] = useState(false);
-  const [quality, setQuality] = useState([100]);
-
-  const {
-    register,
-    handleSubmit,
-    formState: { errors },
-    setValue,
-    watch,
-    reset,
-  } = useForm<VideoUploadFormData>({
-    resolver: zodResolver(videoUploadSchema),
-    defaultValues: { 
-      controls: true, 
-      quality: 100 
-    },
+export default function UploadTestPage() {
+  const [title, setTitle] = useState('');
+  const [description, setDescription] = useState('');
+  const [videoUrl, setVideoUrl] = useState('');
+  const [thumbUrl, setThumbUrl] = useState('');
+  const [status, setStatus] = useState('');
+  const [uploadProgress, setUploadProgress] = useState<{video: number, thumb: number}>({
+    video: 0,
+    thumb: 0
   });
+  const [isUploading, setIsUploading] = useState(false);
 
-  const watchedValues = watch();
+  // Fetch ImageKit auth params
+  async function getAuthParams(): Promise<ImageKitAuthParams> {
+    const res = await fetch('/api/imagekit-auth');
+    if (!res.ok) {
+      const errorText = await res.text();
+      throw new Error(`Failed to fetch auth: ${errorText}`);
+    }
+    return res.json();
+  }
 
-  const onSubmit: SubmitHandler<VideoUploadFormData> = async (data) => {
-    setIsLoading(true);
+  // Generic upload function using XHR
+  function uploadToImageKit(
+    file: File, 
+    folder: string, 
+    onProgress?: (p: number) => void
+  ): Promise<ImageKitResponse> {
+    return new Promise(async (resolve, reject) => {
+      try {
+        const auth = await getAuthParams();
+        
+        // Validate auth parameters
+        if (!auth.token || !auth.signature || !auth.expire) {
+          throw new Error('Invalid authentication parameters received');
+        }
+
+        const formData = new FormData();
+        
+        // Generate unique filename to avoid conflicts
+        const timestamp = Date.now();
+        const fileName = `${timestamp}_${file.name}`;
+        
+        formData.append('file', file);
+        formData.append('fileName', fileName);
+        formData.append('folder', folder);
+        
+        // Ensure public key is available
+        const publicKey = process.env.NEXT_PUBLIC_IMAGEKIT_PUBLIC_KEY;
+        if (!publicKey) {
+          throw new Error('ImageKit public key not configured');
+        }
+        
+        formData.append('publicKey', publicKey);
+        formData.append('token', auth.token);
+        formData.append('signature', auth.signature);
+        formData.append('expire', String(auth.expire));
+
+        // Add transformation parameters - but not as FormData for ImageKit
+        // ImageKit expects these as URL parameters or separate fields
+        if (file.type.startsWith('video/')) {
+          // Add video-specific parameters if needed
+          formData.append('useUniqueFileName', 'true');
+        }
+
+        const xhr = new XMLHttpRequest();
+        xhr.open('POST', 'https://upload.imagekit.io/api/v1/files/upload');
+
+        xhr.upload.onprogress = (e) => {
+          if (e.lengthComputable && onProgress) {
+            const progress = Math.round((e.loaded / e.total) * 100);
+            onProgress(progress);
+          }
+        };
+
+        xhr.onload = () => {
+          if (xhr.status === 200) {
+            try {
+              const response: ImageKitResponse = JSON.parse(xhr.responseText);
+              resolve(response);
+            } catch (parseError) {
+              reject(new Error('Failed to parse response'));
+            }
+          } else {
+            let errorMessage = `Upload failed with status: ${xhr.status}`;
+            try {
+              const errorResponse = JSON.parse(xhr.responseText);
+              errorMessage = errorResponse.message || errorMessage;
+            } catch (e) {
+              // Use default error message
+            }
+            reject(new Error(errorMessage));
+          }
+        };
+
+        xhr.onerror = () => reject(new Error('Network error during upload'));
+        xhr.ontimeout = () => reject(new Error('Upload timeout'));
+        
+        // Set timeout to 5 minutes for large files
+        xhr.timeout = 300000; 
+        
+        xhr.send(formData);
+      } catch (err) {
+        reject(err);
+      }
+    });
+  }
+
+  const onVideoChange = async (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Validate file type
+    if (!file.type.startsWith('video/')) {
+      setStatus('Please select a valid video file');
+      return;
+    }
+
+    // Validate file size (e.g., max 100MB)
+    const maxSize = 100 * 1024 * 1024; // 100MB
+    if (file.size > maxSize) {
+      setStatus('Video file is too large. Maximum size is 100MB');
+      return;
+    }
+
+    setIsUploading(true);
+    setStatus('Uploading video...');
+    setUploadProgress(prev => ({ ...prev, video: 0 }));
+
     try {
-      // Call backend to save video metadata
-      const savedVideo: IVideo = await apiClient.createVideo({
-        title: data.title,
-        description: data.description,
-        videoUrl: data.videoUrl,
-        thumbnailUrl: data.thumbnailUrl,
-        controls: data.controls,
-        transformation: { 
-          height: 1920, 
-          width: 1080, 
-          quality: data.quality 
-        },
+      const response = await uploadToImageKit(file, '/videos', (progress) => {
+        setUploadProgress(prev => ({ ...prev, video: progress }));
+        setStatus(`Uploading video: ${progress}%`);
       });
-
-      toast.success('Video uploaded successfully!', {
-        description: 'Your video is being processed and will be ready shortly.',
-      });
-
-      reset();
-      setQuality([100]);
       
-      // Redirect to the new video's page
-      router.push(`/video/${savedVideo._id}`);
-    } catch (error: any) {
-      console.error('Upload error:', error);
-      toast.error('Upload failed', { 
-        description: error.message || 'Please try again later.' 
-      });
+      setVideoUrl(response.url);
+      setStatus('Video uploaded successfully');
+    } catch (err) {
+      console.error('Video upload error:', err);
+      setStatus(`Video upload failed: ${err instanceof Error ? err.message : 'Unknown error'}`);
     } finally {
-      setIsLoading(false);
+      setIsUploading(false);
     }
   };
 
-  const handleQualityChange = (value: number[]) => {
-    setQuality(value);
-    setValue('quality', value[0]);
+  const onThumbChange = async (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Validate file type
+    if (!file.type.startsWith('image/')) {
+      setStatus('Please select a valid image file');
+      return;
+    }
+
+    // Validate file size (e.g., max 5MB)
+    const maxSize = 5 * 1024 * 1024; // 5MB
+    if (file.size > maxSize) {
+      setStatus('Image file is too large. Maximum size is 5MB');
+      return;
+    }
+
+    setIsUploading(true);
+    setStatus('Uploading thumbnail...');
+    setUploadProgress(prev => ({ ...prev, thumb: 0 }));
+
+    try {
+      const response = await uploadToImageKit(file, '/thumbnails', (progress) => {
+        setUploadProgress(prev => ({ ...prev, thumb: progress }));
+        setStatus(`Uploading thumbnail: ${progress}%`);
+      });
+      
+      setThumbUrl(response.url);
+      setStatus('Thumbnail uploaded successfully');
+    } catch (err) {
+      console.error('Thumbnail upload error:', err);
+      setStatus(`Thumbnail upload failed: ${err instanceof Error ? err.message : 'Unknown error'}`);
+    } finally {
+      setIsUploading(false);
+    }
   };
 
-  const handleControlsChange = (checked: boolean) => {
-    setValue('controls', checked);
+  const onSubmit = async (e: FormEvent) => {
+    e.preventDefault();
+    
+    // Validation
+    if (!title.trim()) {
+      setStatus('Please enter a title');
+      return;
+    }
+    
+    if (!description.trim()) {
+      setStatus('Please enter a description');
+      return;
+    }
+    
+    if (!videoUrl) {
+      setStatus('Please upload a video file');
+      return;
+    }
+    
+    if (!thumbUrl) {
+      setStatus('Please upload a thumbnail image');
+      return;
+    }
+
+    setStatus('Saving video metadata...');
+    
+    try {
+      const res = await fetch('/api/video', {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json' 
+        },
+        body: JSON.stringify({
+          title: title.trim(),
+          description: description.trim(),
+          videoUrl,
+          thumbnailUrl: thumbUrl,
+          controls: true,
+          transformation: {
+            height: 1080,
+            width: 1920,
+            quality: 80
+          }
+        }),
+      });
+      
+      if (!res.ok) {
+        const errorText = await res.text();
+        throw new Error(errorText || 'Failed to save video');
+      }
+      
+      const data = await res.json();
+      setStatus(`Video saved successfully! ID: ${data._id}`);
+      
+      // Reset form after successful submission
+      setTitle('');
+      setDescription('');
+      setVideoUrl('');
+      setThumbUrl('');
+      setUploadProgress({ video: 0, thumb: 0 });
+      
+    } catch (err) {
+      console.error('Save error:', err);
+      setStatus(`Failed to save video: ${err instanceof Error ? err.message : 'Unknown error'}`);
+    }
   };
+
+  const canSubmit = title.trim() && description.trim() && videoUrl && thumbUrl && !isUploading;
 
   return (
-    <main className="min-h-screen relative p-4">
-      <AnimatedBackground />
-      <Navbar />
-      <div className="max-w-4xl mx-auto pt-24 pb-12">
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.6 }}
-          className="text-center mb-8"
-        >
-          <h1 className="text-4xl font-bold bg-gradient-to-r from-purple-400 to-blue-400 bg-clip-text text-transparent mb-4">
-            Upload Your Video
-          </h1>
-          <p className="text-gray-400 text-lg">
-            Transform your video with AI-powered processing
-          </p>
-        </motion.div>
-
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          {/* Main Form */}
-          <div className="lg:col-span-2">
-            <FormCard>
-              <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
-                {/* Basic Information */}
-                <div className="space-y-6">
-                  <h3 className="text-xl font-semibold text-white flex items-center space-x-2">
-                    <Upload className="h-5 w-5" />
-                    <span>Basic Information</span>
-                  </h3>
-                  
-                  {/* Title */}
-                  <motion.div 
-                    initial={{ opacity: 0, x: -20 }} 
-                    animate={{ opacity: 1, x: 0 }} 
-                    transition={{ duration: 0.5, delay: 0.1 }}
-                  >
-                    <Label htmlFor="title" className="text-sm font-medium text-gray-300">
-                      Video Title *
-                    </Label>
-                    <Input
-                      {...register('title')}
-                      id="title"
-                      placeholder="Enter your video title"
-                      className="mt-2 bg-white/5 border-white/20 text-white placeholder:text-gray-400 focus:border-purple-400 transition-colors"
-                      disabled={isLoading}
-                    />
-                    {errors.title && (
-                      <p className="text-red-400 text-sm mt-1">{errors.title.message}</p>
-                    )}
-                  </motion.div>
-                  
-                  {/* Description */}
-                  <motion.div 
-                    initial={{ opacity: 0, x: -20 }} 
-                    animate={{ opacity: 1, x: 0 }} 
-                    transition={{ duration: 0.5, delay: 0.2 }}
-                  >
-                    <Label htmlFor="description" className="text-sm font-medium text-gray-300">
-                      Description *
-                    </Label>
-                    <Textarea
-                      {...register('description')}
-                      id="description"
-                      placeholder="Describe your video..."
-                      rows={4}
-                      className="mt-2 bg-white/5 border-white/20 text-white placeholder:text-gray-400 focus:border-purple-400 transition-colors resize-none"
-                      disabled={isLoading}
-                    />
-                    {errors.description && (
-                      <p className="text-red-400 text-sm mt-1">{errors.description.message}</p>
-                    )}
-                  </motion.div>
-                </div>
-
-                {/* Media Files */}
-                <div className="space-y-6">
-                  <h3 className="text-xl font-semibold text-white flex items-center space-x-2">
-                    <Upload className="h-5 w-5" />
-                    <span>Media Files</span>
-                  </h3>
-                  
-                  <motion.div 
-                    initial={{ opacity: 0, x: -20 }} 
-                    animate={{ opacity: 1, x: 0 }} 
-                    transition={{ duration: 0.5, delay: 0.3 }}
-                  >
-                    <FileUpload
-                      label="Video File *"
-                      accept="video/mp4,video/avi,video/mov,video/wmv"
-                      value={watchedValues.videoUrl || ''}
-                      onChange={(v) => setValue('videoUrl', v)}
-                      type="video"
-                    />
-                    {errors.videoUrl && (
-                      <p className="text-red-400 text-sm mt-1">{errors.videoUrl.message}</p>
-                    )}
-                  </motion.div>
-                  
-                  <motion.div 
-                    initial={{ opacity: 0, x: -20 }} 
-                    animate={{ opacity: 1, x: 0 }} 
-                    transition={{ duration: 0.5, delay: 0.4 }}
-                  >
-                    <FileUpload
-                      label="Thumbnail Image *"
-                      accept="image/*"
-                      value={watchedValues.thumbnailUrl || ''}
-                      onChange={(v) => setValue('thumbnailUrl', v)}
-                      type="image"
-                    />
-                    {errors.thumbnailUrl && (
-                      <p className="text-red-400 text-sm mt-1">{errors.thumbnailUrl.message}</p>
-                    )}
-                  </motion.div>
-                </div>
-
-                {/* Settings */}
-                <div className="space-y-6">
-                  <h3 className="text-xl font-semibold text-white flex items-center space-x-2">
-                    <Settings className="h-5 w-5" />
-                    <span>Processing Settings</span>
-                  </h3>
-                  
-                  <motion.div 
-                    className="space-y-4" 
-                    initial={{ opacity: 0, x: -20 }} 
-                    animate={{ opacity: 1, x: 0 }} 
-                    transition={{ duration: 0.5, delay: 0.5 }}
-                  >
-                    <div className="flex items-center space-x-2">
-                      <Checkbox
-                        id="controls"
-                        checked={watchedValues.controls || false}
-                        onCheckedChange={handleControlsChange}
-                        disabled={isLoading}
-                      />
-                      <Label htmlFor="controls" className="text-sm text-gray-300">
-                        Show video controls
-                      </Label>
-                    </div>
-                    
-                    <div className="space-y-2">
-                      <Label className="text-sm font-medium text-gray-300">
-                        Quality: {quality[0]}%
-                      </Label>
-                      <Slider
-                        value={quality}
-                        onValueChange={handleQualityChange}
-                        max={100}
-                        min={1}
-                        step={1}
-                        className="w-full"
-                        disabled={isLoading}
-                      />
-                    </div>
-                  </motion.div>
-                </div>
-
-                {/* Submit */}
-                <motion.div 
-                  initial={{ opacity: 0, y: 20 }} 
-                  animate={{ opacity: 1, y: 0 }} 
-                  transition={{ duration: 0.5, delay: 0.6 }}
-                >
-                  <Button 
-                    type="submit" 
-                    disabled={isLoading} 
-                    className="w-full bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 text-white py-4 font-semibold text-lg transition-all duration-300"
-                  >
-                    {isLoading ? (
-                      <motion.div 
-                        className="flex items-center space-x-2" 
-                        initial={{ opacity: 0 }} 
-                        animate={{ opacity: 1 }}
-                      >
-                        <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                        <span>Processing Video...</span>
-                      </motion.div>
-                    ) : (
-                      <span className="flex items-center justify-center space-x-2">
-                        <Upload className="h-5 w-5" />
-                        <span>Upload & Process</span>
-                      </span>
-                    )}
-                  </Button>
-                </motion.div>
-              </form>
-            </FormCard>
-          </div>
-
-          {/* Preview Panel */}
-          <div className="lg:col-span-1">
-            <motion.div 
-              initial={{ opacity: 0, x: 20 }} 
-              animate={{ opacity: 1, x: 0 }} 
-              transition={{ duration: 0.6, delay: 0.3 }}
-            >
-              <FormCard title="Preview" className="sticky top-24">
-                <div className="space-y-4">
-                  {watchedValues.thumbnailUrl ? (
-                    <div className="aspect-video bg-black rounded-lg overflow-hidden">
-                      <img 
-                        src={watchedValues.thumbnailUrl} 
-                        alt="Thumbnail preview" 
-                        className="w-full h-full object-cover" 
-                      />
-                    </div>
-                  ) : (
-                    <div className="aspect-video bg-gray-800 rounded-lg flex items-center justify-center">
-                      <p className="text-gray-400 text-sm">Thumbnail preview</p>
-                    </div>
-                  )}
-                  
-                  <div className="space-y-2">
-                    <h4 className="font-medium text-white truncate">
-                      {watchedValues.title || 'Video Title'}
-                    </h4>
-                    <p className="text-sm text-gray-400 line-clamp-3">
-                      {watchedValues.description || 'Video description will appear here...'}
-                    </p>
-                  </div>
-                  
-                  <div className="flex items-center justify-between text-xs text-gray-500">
-                    <span>Quality: {quality[0]}%</span>
-                    <span className="flex items-center space-x-1">
-                      {watchedValues.controls && <Check className="h-3 w-3" />}
-                      <span>Controls</span>
-                    </span>
-                  </div>
-                </div>
-              </FormCard>
-            </motion.div>
-          </div>
+    <div style={{ padding: 20, maxWidth: 600 }}>
+      <h1>Upload Video</h1>
+      <form onSubmit={onSubmit}>
+        <div style={{ marginBottom: 16 }}>
+          <label style={{ display: 'block', marginBottom: 8, fontWeight: 'bold' }}>
+            Title: *
+          </label>
+          <input 
+            type="text"
+            value={title} 
+            onChange={(e) => setTitle(e.target.value)}
+            required
+            disabled={isUploading}
+            style={{ 
+              width: '100%', 
+              padding: 8, 
+              border: '1px solid #ccc',
+              borderRadius: 4
+            }}
+            placeholder="Enter video title"
+          />
         </div>
-      </div>
-    </main>
+        
+        <div style={{ marginBottom: 16 }}>
+          <label style={{ display: 'block', marginBottom: 8, fontWeight: 'bold' }}>
+            Description: *
+          </label>
+          <textarea 
+            value={description} 
+            onChange={(e) => setDescription(e.target.value)}
+            required
+            disabled={isUploading}
+            rows={4}
+            style={{ 
+              width: '100%', 
+              padding: 8, 
+              border: '1px solid #ccc',
+              borderRadius: 4,
+              resize: 'vertical'
+            }}
+            placeholder="Enter video description"
+          />
+        </div>
+        
+        <div style={{ marginBottom: 16 }}>
+          <label style={{ display: 'block', marginBottom: 8, fontWeight: 'bold' }}>
+            Video File: * (Max 100MB)
+          </label>
+          <input 
+            type="file" 
+            accept="video/*" 
+            onChange={onVideoChange}
+            disabled={isUploading}
+            style={{ marginBottom: 8 }}
+          />
+          {uploadProgress.video > 0 && (
+            <div style={{ marginBottom: 8 }}>
+              <div style={{ 
+                width: '100%', 
+                backgroundColor: '#f0f0f0', 
+                borderRadius: 4, 
+                overflow: 'hidden' 
+              }}>
+                <div style={{ 
+                  width: `${uploadProgress.video}%`, 
+                  backgroundColor: '#4CAF50', 
+                  height: 20, 
+                  transition: 'width 0.3s' 
+                }} />
+              </div>
+              <small>{uploadProgress.video}% uploaded</small>
+            </div>
+          )}
+          {videoUrl && (
+            <p style={{ color: 'green', fontSize: 14 }}>
+              ✓ Video uploaded successfully
+            </p>
+          )}
+        </div>
+        
+        <div style={{ marginBottom: 16 }}>
+          <label style={{ display: 'block', marginBottom: 8, fontWeight: 'bold' }}>
+            Thumbnail Image: * (Max 5MB)
+          </label>
+          <input 
+            type="file" 
+            accept="image/*" 
+            onChange={onThumbChange}
+            disabled={isUploading}
+            style={{ marginBottom: 8 }}
+          />
+          {uploadProgress.thumb > 0 && (
+            <div style={{ marginBottom: 8 }}>
+              <div style={{ 
+                width: '100%', 
+                backgroundColor: '#f0f0f0', 
+                borderRadius: 4, 
+                overflow: 'hidden' 
+              }}>
+                <div style={{ 
+                  width: `${uploadProgress.thumb}%`, 
+                  backgroundColor: '#2196F3', 
+                  height: 20, 
+                  transition: 'width 0.3s' 
+                }} />
+              </div>
+              <small>{uploadProgress.thumb}% uploaded</small>
+            </div>
+          )}
+          {thumbUrl && (
+            <div>
+              <p style={{ color: 'green', fontSize: 14 }}>
+                ✓ Thumbnail uploaded successfully
+              </p>
+              <img 
+                src={thumbUrl} 
+                alt="Thumbnail preview" 
+                style={{ 
+                  maxWidth: 200, 
+                  maxHeight: 150, 
+                  objectFit: 'cover',
+                  border: '1px solid #ccc',
+                  borderRadius: 4
+                }} 
+              />
+            </div>
+          )}
+        </div>
+        
+        <button 
+          type="submit"
+          disabled={!canSubmit}
+          style={{
+            padding: '12px 24px',
+            backgroundColor: canSubmit ? '#4CAF50' : '#ccc',
+            color: 'white',
+            border: 'none',
+            borderRadius: 4,
+            cursor: canSubmit ? 'pointer' : 'not-allowed',
+            fontSize: 16,
+            fontWeight: 'bold'
+          }}
+        >
+          {isUploading ? 'Uploading...' : 'Save Video'}
+        </button>
+      </form>
+      
+      {status && (
+        <div style={{ 
+          marginTop: 16, 
+          padding: 12, 
+          backgroundColor: status.includes('failed') || status.includes('error') ? '#ffebee' : '#e8f5e8',
+          color: status.includes('failed') || status.includes('error') ? '#c62828' : '#2e7d32',
+          borderRadius: 4,
+          border: `1px solid ${status.includes('failed') || status.includes('error') ? '#ffcdd2' : '#c8e6c9'}`
+        }}>
+          <strong>Status:</strong> {status}
+        </div>
+      )}
+    </div>
   );
 }

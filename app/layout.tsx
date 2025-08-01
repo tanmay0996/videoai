@@ -1,8 +1,12 @@
+// app/layout.tsx
+
 import './globals.css';
 import type { Metadata } from 'next';
 import { Inter } from 'next/font/google';
 import { Toaster } from '@/components/ui/sonner';
 import { cn } from '@/lib/utils';
+//  import { IKProvider } from '@imagekit/next';
+import Providers from './components/Providers';
 
 const inter = Inter({ subsets: ['latin'] });
 
@@ -19,8 +23,10 @@ export default function RootLayout({
   return (
     <html lang="en" className="dark">
       <body className={cn(inter.className, "min-h-screen bg-gray-950 text-white")}>
-        {children}
-        <Toaster position="top-right" />
+      <Providers>
+          {children}
+          <Toaster position="top-right" />
+          </Providers>       
       </body>
     </html>
   );

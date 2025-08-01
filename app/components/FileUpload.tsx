@@ -14,6 +14,9 @@ interface FileUploadProps {
   onChange: (value: string) => void;
   type: 'video' | 'image';
   className?: string;
+   onFileSelect?: (file: File) => Promise<string>;
+  isUploading?: boolean;
+  uploadProgress?: number;
 }
 
 export default function FileUpload({ label, accept, value, onChange, type, className }: FileUploadProps) {
