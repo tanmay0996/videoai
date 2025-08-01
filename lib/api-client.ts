@@ -44,7 +44,7 @@ class ApiClient {
     });
   }
 
-// ✅ New function for user registration
+ // ✅ New function for user registration
   async registerUser(
     userData: { name: string; email: string; password: string }
   ): Promise<{ message: string }> {
@@ -53,6 +53,13 @@ class ApiClient {
       body: userData,
     });
   }
+
+
+   // For login 
+   /*🔹 IMPORT signIn helper
+import { signIn } from 'next-auth/react';
+*/
+  
 
 }
 

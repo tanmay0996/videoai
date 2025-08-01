@@ -16,6 +16,9 @@ import FormCard from '../components/FormCard';
 import AnimatedBackground from '../components/AnimatedBackground';
 import Navbar from '../components/Navbar';
 
+// 🔹 IMPORT signIn helper
+import { signIn } from 'next-auth/react';
+
 const loginSchema = z.object({
   email: z.string().email('Please enter a valid email'),
   password: z.string().min(1, 'Password is required'),
@@ -38,23 +41,26 @@ export default function Login() {
 
   const onSubmit = async (data: LoginFormData) => {
     setIsLoading(true);
-    
-    // Simulate API call
-    try {
-      await new Promise(resolve => setTimeout(resolve, 1500));
-      
+
+    // 🔹 Use signIn() instead of raw fetch
+    const res = await signIn('credentials', {
+      redirect: false,           // stay in JS-land and inspect result
+      email: data.email,
+      password: data.password,
+      callbackUrl: '/video',     // where to go on success
+    });
+
+    setIsLoading(false);
+
+    if (res?.error) {
+      console.error('Login error:', res.error);  // log for debugging
+      toast.error('Login failed', { description: res.error });
+    } else {
       toast.success('Login successful!', {
-        description: 'Welcome back to VideoAI',
+        description: 'Welcome back to VideoAI!',
       });
-      
-      // Redirect to video upload page
-      router.push('/video');
-    } catch (error) {
-      toast.error('Login failed', {
-        description: 'Please check your credentials and try again.',
-      });
-    } finally {
-      setIsLoading(false);
+      // 🔹 Navigate to the protected page
+      router.push(res?.url || '/video');
     }
   };
 
@@ -62,18 +68,12 @@ export default function Login() {
     <main className="min-h-screen relative flex items-center justify-center p-4">
       <AnimatedBackground />
       <Navbar />
-      
+
       <div className="w-full max-w-md relative z-10">
-        <FormCard
-          title="Welcome Back"
-          subtitle="Sign in to your VideoAI account"
-        >
-          <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
-            <motion.div
-              initial={{ opacity: 0, x: -20 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ duration: 0.5, delay: 0.1 }}
-            >
+        <FormCard title="Welcome Back" subtitle="Sign in to your VideoAI account">
+          <form onSubmit={handleSubmit(onSubmit)} className="space-y-6" action="javascript:void(0)">
+            {/* Email */}
+            <motion.div initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: 0.5, delay: 0.1 }}>
               <Label htmlFor="email" className="text-sm font-medium text-gray-300">
                 Email Address
               </Label>
@@ -85,16 +85,11 @@ export default function Login() {
                 className="mt-2 bg-white/5 border-white/20 text-white placeholder:text-gray-400 focus:border-purple-400 transition-colors"
                 disabled={isLoading}
               />
-              {errors.email && (
-                <p className="text-red-400 text-sm mt-1">{errors.email.message}</p>
-              )}
+              {errors.email && <p className="text-red-400 text-sm mt-1">{errors.email.message}</p>}
             </motion.div>
 
-            <motion.div
-              initial={{ opacity: 0, x: -20 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ duration: 0.5, delay: 0.2 }}
-            >
+            {/* Password */}
+            <motion.div initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: 0.5, delay: 0.2 }}>
               <Label htmlFor="password" className="text-sm font-medium text-gray-300">
                 Password
               </Label>
@@ -118,41 +113,25 @@ export default function Login() {
                   {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                 </Button>
               </div>
-              {errors.password && (
-                <p className="text-red-400 text-sm mt-1">{errors.password.message}</p>
-              )}
+              {errors.password && <p className="text-red-400 text-sm mt-1">{errors.password.message}</p>}
             </motion.div>
 
-            <motion.div
-              className="text-right"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ duration: 0.5, delay: 0.3 }}
-            >
-              <Link
-                href="#"
-                className="text-sm text-purple-400 hover:text-purple-300 transition-colors"
-              >
+            {/* Forgot Password Link */}
+            <motion.div className="text-right" initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.5, delay: 0.3 }}>
+              <Link href="#" className="text-sm text-purple-400 hover:text-purple-300 transition-colors">
                 Forgot your password?
               </Link>
             </motion.div>
 
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.5, delay: 0.4 }}
-            >
+            {/* Submit Button */}
+            <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5, delay: 0.4 }}>
               <Button
                 type="submit"
-                className="w-full bg-linear-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 text-white py-3 font-semibold transition-all duration-300"
                 disabled={isLoading}
+                className="w-full bg-linear-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 text-white py-3 font-semibold transition-all duration-300"
               >
                 {isLoading ? (
-                  <motion.div
-                    className="flex items-center space-x-2"
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                  >
+                  <motion.div className="flex items-center space-x-2" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
                     <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
                     <span>Signing In...</span>
                   </motion.div>
@@ -166,18 +145,11 @@ export default function Login() {
             </motion.div>
           </form>
 
-          <motion.div
-            className="mt-8 text-center"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ duration: 0.5, delay: 0.5 }}
-          >
+          {/* Sign-up Link */}
+          <motion.div className="mt-8 text-center" initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.5, delay: 0.5 }}>
             <p className="text-gray-400">
               Don't have an account?{' '}
-              <Link
-                href="/register"
-                className="text-purple-400 hover:text-purple-300 font-medium transition-colors"
-              >
+              <Link href="/register" className="text-purple-400 hover:text-purple-300 font-medium transition-colors">
                 Sign up
               </Link>
             </p>
