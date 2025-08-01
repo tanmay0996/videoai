@@ -4,6 +4,7 @@ import bcrypt from "bcryptjs";
 
 //Generics
 export interface IUser {    // declare an interface where u have to define the types
+    name:string;
     email: string;
     password: string;
     _id?:mongoose.Types.ObjectId;
@@ -11,29 +12,25 @@ export interface IUser {    // declare an interface where u have to define the t
     updatedAt?: Date;
 }
 
-const userSchema= new Schema<IUser>(
-    {
-      email:{type:String,required:true,unique:true},
-      password:{type:String,required:true, unique:true},
-
-    },
-    {
-        timestamps:true
-
-    }
-)
-
-//Pre hooks for hashing password
-
-userSchema.pre('save', async function(next){
-
-    if(this.isModified("password")){
-        this.password= await bcrypt.hash(this.password,10)
-    }
-
-    next();
-}
+// Define schema
+const userSchema = new Schema<IUser>(
+  {
+    name: { type: String, required: true },           // ✅ Add name field
+    email: { type: String, required: true, unique: true },
+    password: { type: String, required: true },       // ✅ removed `unique:true` from password (not needed)
+  },
+  {
+    timestamps: true,
+  }
 );
+
+// Pre hook for hashing password
+userSchema.pre("save", async function (next) {
+  if (this.isModified("password")) {
+    this.password = await bcrypt.hash(this.password, 10);
+  }
+  next();
+});
 
 const User=models?.User|| model<IUser>("User",userSchema)
 //search if there any existing model nmaed"User" present or not

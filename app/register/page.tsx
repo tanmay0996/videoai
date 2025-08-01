@@ -1,5 +1,4 @@
-'use client';
-
+"use client"
 import { useState } from 'react';
 import { motion } from 'framer-motion';
 import Link from 'next/link';
@@ -14,6 +13,7 @@ import { toast } from 'sonner';
 import FormCard from '../components/FormCard';
 import AnimatedBackground from '../components/AnimatedBackground';
 import Navbar from '../components/Navbar';
+import { apiClient } from '@/lib/api-client';
 
 const registerSchema = z.object({
   name: z.string().min(2, 'Name must be at least 2 characters'),
@@ -38,19 +38,24 @@ export default function Register() {
 
   const onSubmit = async (data: RegisterFormData) => {
     setIsLoading(true);
-    
-    // Simulate API call
+
     try {
-      await new Promise(resolve => setTimeout(resolve, 1500));
-      
-      toast.success('Account created successfully!', {
-        description: 'Welcome to VideoAI! You can now log in.',
+      // Use the ApiClient to register the user
+      const result = await apiClient.registerUser({
+        name: data.name,
+        email: data.email,
+        password: data.password,
       });
-      
+
+      // On success, toast and reset
+      toast.success('Account created successfully!', {
+        description: result.message,
+      });
       reset();
-    } catch (error) {
+    } catch (error: any) {
+      // Handle and display error
       toast.error('Registration failed', {
-        description: 'Please try again later.',
+        description: error.message || 'Please try again later.',
       });
     } finally {
       setIsLoading(false);
@@ -67,7 +72,8 @@ export default function Register() {
           title="Create Account"
           subtitle="Join VideoAI and start transforming your videos"
         >
-          <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
+          <form onSubmit={handleSubmit(onSubmit)} className="space-y-6" action="javascript:void(0)">
+            {/* Name Field */}
             <motion.div
               initial={{ opacity: 0, x: -20 }}
               animate={{ opacity: 1, x: 0 }}
@@ -89,6 +95,7 @@ export default function Register() {
               )}
             </motion.div>
 
+            {/* Email Field */}
             <motion.div
               initial={{ opacity: 0, x: -20 }}
               animate={{ opacity: 1, x: 0 }}
@@ -110,6 +117,7 @@ export default function Register() {
               )}
             </motion.div>
 
+            {/* Password Field */}
             <motion.div
               initial={{ opacity: 0, x: -20 }}
               animate={{ opacity: 1, x: 0 }}
@@ -143,6 +151,7 @@ export default function Register() {
               )}
             </motion.div>
 
+            {/* Submit Button */}
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
@@ -172,6 +181,7 @@ export default function Register() {
             </motion.div>
           </form>
 
+          {/* Login Link */}
           <motion.div
             className="mt-8 text-center"
             initial={{ opacity: 0 }}

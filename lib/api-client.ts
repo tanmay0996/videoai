@@ -43,6 +43,22 @@ class ApiClient {
       body: videoData,
     });
   }
+
+// ✅ New function for user registration
+  async registerUser(
+    userData: { name: string; email: string; password: string }
+  ): Promise<{ message: string }> {
+    return this.fetch<{ message: string }>("/auth/register", {
+      method: "POST",
+      body: userData,
+    });
+  }
+
 }
+
+
+
+
+
 
 export const apiClient = new ApiClient();
