@@ -33,18 +33,18 @@ class ApiClient {
     return response.json();
   }
 
-  async getVideos() {
-    return this.fetch("/videos");
+  async getVideos(): Promise<IVideo[]> {
+    return this.fetch<IVideo[]>("/video");
   }
 
-  async createVideo(videoData: VideoFormData) {
-    return this.fetch("/videos", {
+  async createVideo(videoData: VideoFormData): Promise<IVideo> {
+    return this.fetch<IVideo>("/video", {
       method: "POST",
       body: videoData,
     });
   }
 
- // ✅ New function for user registration
+  // ✅ New function for user registration
   async registerUser(
     userData: { name: string; email: string; password: string }
   ): Promise<{ message: string }> {
@@ -54,18 +54,10 @@ class ApiClient {
     });
   }
 
-
-   // For login 
-   /*🔹 IMPORT signIn helper
-import { signIn } from 'next-auth/react';
-*/
-  
-
+  // For login 
+  /*🔹 IMPORT signIn helper
+  import { signIn } from 'next-auth/react';
+  */
 }
-
-
-
-
-
 
 export const apiClient = new ApiClient();
